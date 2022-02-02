@@ -1,32 +1,40 @@
-import time, socket, sys
- 
-new_socket = socket.socket()
-host_name = socket.gethostname()
-s_ip = socket.gethostbyname(host_name)
- 
-port = 8080
- 
-new_socket.bind((host_name, port))
-print("Binding successful!")
-print("This is your IP: ", s_ip)
- 
-name = input('Enter name: ')
- 
-new_socket.listen(1) 
- 
- 
-conn, add = new_socket.accept()
- 
-print("Received connection from ", add[0])
-print('Connection Established. Connected From: ',add[0])
- 
-client = (conn.recv(1024)).decode()
-print(client + ' has connected.')
- 
-conn.send(name.encode())
-while True:
-  message = input('Me : ')
-  conn.send(message.encode())
-  message = conn.recv(1024)
-  message = message.decode()
-  print(client, ':', message)
+import asyncio, json, socket
+
+clients = set()
+
+async def send(writer, data):
+  encoded = data.encode('utf8')
+  writer.write(len(encoded).to_bytes(4, 'big'))
+  writer.write(encoded)
+  await writer.drain()
+
+async def receive(reader):
+  length_bytes = await reader.read(4)
+  length = int.from_bytes(length_bytes, "big")
+  data = (await reader.read(length)).decode('utf8')
+  return data
+
+async def broadcast(data):
+  for writer in clients:
+    await send(writer, data)
+
+async def handle_client(reader, writer):
+  print('connected')
+  clients.add(writer)
+  try:
+    request = None
+    while request != 'quit':
+      request = await receive(reader)
+      response = str(f"from client: {request}")
+      await broadcast(response)
+  except:
+    print('disconnected')
+  clients.remove(writer)
+  writer.close()
+
+async def run_server():
+  server = await asyncio.start_server(handle_client, 'localhost', 8080)
+  async with server:
+    await server.serve_forever()
+
+asyncio.run(run_server())
